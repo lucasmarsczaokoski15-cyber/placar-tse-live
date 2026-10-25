@@ -9,23 +9,22 @@
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;width:100%;height:auto;min-height:0;background:transparent;overflow:hidden;font-family:Arial,Helvetica,sans-serif;color:var(--white)}
 body{display:block}
-.panel{width:100%;height:auto;padding:12px 14px 9px;background:rgba(7,12,34,.92);border:2px solid #667cff;border-radius:14px;box-shadow:0 0 0 2px rgba(30,60,255,.35),inset 0 0 22px rgba(72,50,255,.25),0 0 16px rgba(80,65,255,.65);position:relative;overflow:hidden}
-.panel:before{content:"";position:absolute;inset:4px;border:1px solid rgba(99,111,255,.55);border-radius:9px;pointer-events:none}
-.heading{display:flex;align-items:center;justify-content:center;gap:10px;font-weight:900;font-size:clamp(14px,2.3vw,25px);letter-spacing:.5px;text-align:center;text-shadow:0 0 8px #6377ff;white-space:nowrap}
-.line{height:5px;width:9%;border-radius:5px;flex-shrink:0}
-.red{background:var(--red);box-shadow:0 0 8px var(--red)}.blue{background:var(--blue);box-shadow:0 0 8px var(--blue)}
-.candidates{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
-.candidate{min-width:0;background:rgba(5,11,30,.8);border:2px solid #6978b6;border-radius:9px;padding:8px 10px 7px;text-align:center;position:relative}
-.candidate.lula{border-left:7px solid var(--red)}.candidate.flavio{border-left:7px solid var(--blue)}
-.name{font-weight:900;font-size:clamp(12px,1.9vw,20px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.percent{font-weight:1000;font-size:clamp(25px,4.5vw,48px);line-height:1.1;margin-top:3px;text-shadow:0 0 9px rgba(255,255,255,.16)}
-.votes{color:var(--muted);font-size:clamp(11px,1.7vw,17px);font-weight:700}
-.progress-label{display:flex;justify-content:space-between;gap:8px;margin:10px 3px 5px;font-weight:800;font-size:clamp(11px,1.7vw,17px);color:var(--muted)}
-.track{height:10px;background:#252e50;border:1px solid #6573b1;border-radius:9px;overflow:hidden}
+.panel{width:100%;height:auto;padding:7px 9px 6px;background:rgba(7,12,34,.86);border:2px solid #667cff;border-radius:11px;box-shadow:0 0 0 2px rgba(30,60,255,.3),inset 0 0 16px rgba(72,50,255,.2),0 0 12px rgba(80,65,255,.5);position:relative;overflow:hidden}
+.panel:before{content:"";position:absolute;inset:3px;border:1px solid rgba(99,111,255,.45);border-radius:7px;pointer-events:none}
+.heading{display:flex;align-items:center;justify-content:center;gap:8px;font-weight:900;font-size:clamp(11px,2.2vw,21px);letter-spacing:.4px;text-align:center;text-shadow:0 0 7px #6377ff;white-space:nowrap}
+.line{height:4px;width:8%;border-radius:5px;flex-shrink:0}
+.red{background:var(--red);box-shadow:0 0 7px var(--red)}.blue{background:var(--blue);box-shadow:0 0 7px var(--blue)}
+.candidates{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:7px}
+.candidate{min-width:0;background:rgba(5,11,30,.76);border:1px solid #6978b6;border-radius:7px;padding:5px 7px 4px;text-align:center;position:relative}
+.candidate.lula{border-left:5px solid var(--red)}.candidate.flavio{border-left:5px solid var(--blue)}
+.name{font-weight:900;font-size:clamp(10px,1.6vw,16px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.percent{font-weight:1000;font-size:clamp(19px,3.4vw,34px);line-height:1.02;margin-top:1px;text-shadow:0 0 7px rgba(255,255,255,.16)}
+.votes{color:var(--muted);font-size:clamp(9px,1.25vw,13px);font-weight:700}
+.progress-label{display:flex;justify-content:space-between;gap:8px;margin:6px 2px 3px;font-weight:800;font-size:clamp(9px,1.3vw,13px);color:var(--muted)}
+.track{height:6px;background:#252e50;border:1px solid #6573b1;border-radius:9px;overflow:hidden}
 .fill{height:100%;width:0%;background:linear-gradient(90deg,#ff424d,#ffb34d,#3988ff);transition:width .6s ease}
-.footer{text-align:center;margin-top:8px;color:#d2d8f5;font-size:clamp(10px,1.45vw,14px);font-weight:700}
+.footer{text-align:center;margin-top:4px;color:#d2d8f5;font-size:clamp(8px,1.05vw,11px);font-weight:700;line-height:1.15}
 .status{color:#ffe47a;font-weight:900}
-@media(max-width:600px){.panel{padding:8px}.candidates{gap:7px;margin-top:8px}.candidate{padding:6px 5px}.heading{gap:6px}.footer{margin-top:5px}}
 </style>
 </head>
 <body>
@@ -37,7 +36,7 @@ body{display:block}
 </section>
 <div class="progress-label"><span>URNAS APURADAS</span><span id="urnas">Aguardando dados…</span></div>
 <div class="track"><div class="fill" id="fill"></div></div>
-<div class="footer"><span id="status" class="status">CONECTANDO À FONTE OFICIAL</span><br>Fonte: TSE · atualização automática</div>
+<div class="footer"><span id="status" class="status">CONECTANDO À FONTE OFICIAL</span> · Fonte: TSE · atualização automática</div>
 </main>
 <script>
 const DATA_URL="https://resultados.tse.jus.br/oficial/ele2026/6258/dados/br/br-c0001-e006258-u.json";
@@ -65,8 +64,8 @@ async function updateResults(){
   setText("urnas",percent.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})+"%");
   document.getElementById("fill").style.width=percent+"%";
   const updated=[data.dg,data.hg].filter(Boolean).join(" ");
-  setText("status",(lp===0&&fp===0&&percent===0)?"AGUARDANDO INÍCIO DA TOTALIZAÇÃO":"DADOS OFICIAIS"+(updated?" · "+updated:""));
- }catch(error){setText("status","AGUARDANDO DADOS DO TSE");setText("urnas","indisponível")}
+  setText("status",(lp===0&&fp===0&&percent===0)?"AGUARDANDO TOTALIZAÇÃO":"DADOS OFICIAIS"+(updated?" · "+updated:""));
+ }catch(error){setText("status","DADOS INDISPONÍVEIS");setText("urnas","indisponível")}
 }
 updateResults();setInterval(updateResults,30000);
 </script>
