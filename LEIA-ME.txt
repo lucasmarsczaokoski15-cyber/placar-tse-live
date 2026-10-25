@@ -1,0 +1,23 @@
+PLACAR DE APURAÇÃO PRESIDENCIAL — TIKTOK LIVE STUDIO
+
+Arquivos
+- index.html: placar compacto com estilo neon/arcade.
+- Ele tenta consultar a fonte pública de resultados do TSE a cada 30 segundos.
+
+IMPORTANTE
+- A URL do arquivo JSON pode mudar conforme o turno/pleito. Confira sempre a documentação oficial:
+  https://www.tse.jus.br/eleicoes/informacoes-tecnicas-sobre-a-divulgacao-de-resultados
+- O painel precisa ser hospedado em uma URL HTTPS para ser adicionado pela fonte “Vincular” do TikTok LIVE Studio.
+- Se a hospedagem ou o navegador embutido bloquear a consulta por CORS, será necessário usar um pequeno proxy/backend; não mostre números de teste como se fossem resultados oficiais.
+- Este HTML não contém números eleitorais fixos. Se o TSE não responder, ele mostra “AGUARDANDO DADOS DO TSE”.
+
+Publicar gratuitamente com GitHub Pages:
+1. Entre em https://github.com e crie um repositório público, por exemplo placar-tse-live.
+2. Envie o arquivo index.html para a raiz do repositório.
+3. Em Settings > Pages, escolha Deploy from a branch, selecione main e /(root), e salve.
+4. Aguarde o GitHub gerar a URL HTTPS da página.
+5. No TikTok LIVE Studio, adicione a fonte “Vincular”, cole a URL do GitHub Pages e clique em adicionar.
+6. Redimensione a fonte e posicione-a na área vazia acima dos personagens. Ajuste o tamanho da fonte para não cobrir os lutadores nem a barra do jogo.
+
+Fonte técnica do TSE:
+https://www.tse.jus.br/eleicoes/informacoes-tecnicas-sobre-a-divulgacao-de-resultados
