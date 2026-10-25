@@ -39,70 +39,161 @@ body{display:block}
   <div class="footer"><span id="status" class="status">CONECTANDO À FONTE OFICIAL</span> · Fonte: TSE · atualização automática</div>
 </main>
 <script>
-const DATA_URL="https://resultados.tse.jus.br/oficial/ele2026/6258/dados/br/br-c0001-e006258-u.json";
-const DEMO=new URLSearchParams(location.search).get("demo")==="1";
-const fmtInt=n=>Number(n||0).toLocaleString("pt-BR");
-function setText(id,value){document.getElementById(id).textContent=value}
-function parsePct(value){
-  if(value===undefined||value===null||value==="")return 0;
-  const s=String(value).trim();
-  return Number(s.includes(",")?s.replace(",","."):s)||0;
+/*
+ * Placar TSE — integração baseada no JSON oficial.
+ * A consulta real usa o arquivo nacional da eleição presidencial de 2º turno.
+ * ?demo=1 ativa números fictícios SOMENTE para testar o visual.
+ */
+const DATA_URL = "https://resultados.tse.jus.br/oficial/ele2026/6258/dados/br/br-c0001-e006258-u.json";
+const DEMO = new URLSearchParams(location.search).get("demo") === "1";
+const UPDATE_INTERVAL_MS = 60000; // intervalo conservador entre consultas
+
+const fmtInt = value => Number(value || 0).toLocaleString("pt-BR");
+
+function setText(id, value) {
+  const element = document.getElementById(id);
+  if (element) element.textContent = value;
 }
-function renderCandidate(number,name,pct,votes){
-  setText("name"+number,name+" · "+number);
-  setText("pct"+number,pct.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})+"%");
-  setText("votes"+number,fmtInt(votes)+" votos");
+
+function parseTseNumber(value) {
+  if (value === undefined || value === null || value === "") return 0;
+  // No JSON do TSE, percentuais como pvap/pst vêm como "45,98".
+  const normalized = String(value).trim().replace(",", ".");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
-function renderUrnas(percent){
-  percent=Math.max(0,Math.min(100,percent));
-  setText("urnas",percent.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})+"%");
-  document.getElementById("fill").style.width=percent+"%";
+
+function renderCandidate(number, name, percent, votes) {
+  setText("name" + number, name + " · " + number);
+  setText("pct" + number, percent.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }) + "%");
+  setText("votes" + number, fmtInt(votes) + " votos");
 }
-let demoVotes13=1250,demoVotes22=1480,demoUrnas=12;
-function updateDemo(){
-  const total=demoVotes13+demoVotes22;
-  renderCandidate("13","LULA",demoVotes13/total*100,demoVotes13);
-  renderCandidate("22","FLÁVIO BOLSONARO",demoVotes22/total*100,demoVotes22);
+
+function renderUrnas(percent) {
+  const safePercent = Math.max(0, Math.min(100, Number(percent) || 0));
+  setText("urnas", safePercent.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }) + "%");
+  document.getElementById("fill").style.width = safePercent + "%";
+}
+
+function clearResults(status) {
+  setText("pct13", "—%");
+  setText("pct22", "—%");
+  setText("votes13", "— votos");
+  setText("votes22", "— votos");
+  setText("urnas", "indisponível");
+  document.getElementById("fill").style.width = "0%";
+  setText("status", status);
+}
+
+/* Modo de demonstração: os valores abaixo são inventados e não vêm do TSE. */
+let demoVotes13 = 1250;
+let demoVotes22 = 1480;
+let demoUrnas = 12;
+
+function updateDemo() {
+  const totalVotes = demoVotes13 + demoVotes22;
+  renderCandidate("13", "LULA", demoVotes13 / totalVotes * 100, demoVotes13);
+  renderCandidate("22", "FLÁVIO BOLSONARO", demoVotes22 / totalVotes * 100, demoVotes22);
   renderUrnas(demoUrnas);
-  setText("status","MODO DE TESTE · DADOS FICTÍCIOS");
+  setText("status", "MODO DE TESTE · DADOS FICTÍCIOS");
 }
-function changeDemo(){
-  demoVotes13+=Math.floor(Math.random()*90)+10;
-  demoVotes22+=Math.floor(Math.random()*90)+10;
-  demoUrnas=Math.min(100,demoUrnas+Math.random()*4+1);
+
+function changeDemo() {
+  demoVotes13 += Math.floor(Math.random() * 90) + 10;
+  demoVotes22 += Math.floor(Math.random() * 90) + 10;
+  demoUrnas = Math.min(100, demoUrnas + Math.random() * 4 + 1);
   updateDemo();
 }
-async function updateResults(){
-  try{
-    const response=await fetch(DATA_URL+"?_="+Date.now(),{cache:"no-store"});
-    if(!response.ok)throw new Error("HTTP "+response.status);
-    const data=await response.json();
-    const cargo=(data.carg||[]).find(c=>String(c.cd)==="1")||(data.carg||[])[0];
-    const candidates=[];
-    for(const group of(cargo?.agr||[]))for(const party of(group.par||[]))for(const cand of(party.cand||[]))candidates.push(cand);
-    const lula=candidates.find(c=>String(c.n)==="13"||/LULA/i.test(c.nmu||c.nm||""));
-    const flavio=candidates.find(c=>String(c.n)==="22"||/FLAVIO/i.test(c.nmu||c.nm||""));
-    if(!lula||!flavio)throw new Error("Candidatos não encontrados no JSON");
-    const lp=parsePct(lula.pvap),fp=parsePct(flavio.pvap);
-    renderCandidate("13",lula.nmu||"LULA",lp,lula.vap);
-    renderCandidate("22",flavio.nmu||"FLÁVIO",fp,flavio.vap);
-    const sections=data.s||{},counted=Number(sections.st||0),total=Number(sections.ts||0);
-    const percent=total>0?counted/total*100:parsePct(sections.pst);
-    renderUrnas(percent);
-    setText("status",(lp===0&&fp===0&&percent===0)?"AGUARDANDO TOTALIZAÇÃO":"DADOS RECEBIDOS · "+new Date().toLocaleTimeString("pt-BR"));
-  }catch(error){
-    setText("status","DADOS INDISPONÍVEIS");
-    setText("urnas","indisponível");
-    setText("pct13","—%");
-    setText("pct22","—%");
-    setText("votes13","— votos");
-    setText("votes22","— votos");
-    document.getElementById("fill").style.width="0%";
-    console.error("Erro ao consultar dados do TSE:",error);
+
+async function updateResults() {
+  try {
+    const response = await fetch(DATA_URL, {
+      cache: "no-store",
+      headers: { "Accept": "application/json" }
+    });
+
+    if (!response.ok) {
+      throw new Error("O servidor do TSE respondeu HTTP " + response.status);
+    }
+
+    const data = await response.json();
+
+    if (!Array.isArray(data.carg)) {
+      throw new Error("JSON recebido, mas não contém a lista 'carg' esperada");
+    }
+
+    const presidentCargo = data.carg.find(cargo => String(cargo.cd) === "1");
+    if (!presidentCargo) {
+      throw new Error("Cargo Presidente (cd=1) não encontrado");
+    }
+
+    const candidates = [];
+    for (const group of (presidentCargo.agr || [])) {
+      for (const party of (group.par || [])) {
+        for (const candidate of (party.cand || [])) {
+          candidates.push(candidate);
+        }
+      }
+    }
+
+    // O campo n no JSON oficial contém o número do candidato na urna.
+    const lula = candidates.find(candidate => String(candidate.n) === "13");
+    const flavio = candidates.find(candidate => String(candidate.n) === "22");
+
+    if (!lula || !flavio) {
+      throw new Error("Não encontrei os candidatos de número 13 e 22 no arquivo oficial");
+    }
+
+    const lulaPercent = parseTseNumber(lula.pvap);
+    const flavioPercent = parseTseNumber(flavio.pvap);
+
+    renderCandidate("13", lula.nmu || lula.nm || "LULA", lulaPercent, lula.vap);
+    renderCandidate("22", flavio.nmu || flavio.nm || "FLÁVIO", flavioPercent, flavio.vap);
+
+    // O TSE já fornece pst: percentual de seções totalizadas.
+    // Usar esse campo evita calcular percentual com campos interpretados incorretamente.
+    const sections = data.s || {};
+    const percentApurado = parseTseNumber(sections.pst);
+    renderUrnas(percentApurado);
+
+    const generatedAt = [data.dg, data.hg].filter(Boolean).join(" ");
+    if (lulaPercent === 0 && flavioPercent === 0 && percentApurado === 0) {
+      setText("status", "AGUARDANDO TOTALIZAÇÃO" + (generatedAt ? " · ARQUIVO " + generatedAt : ""));
+    } else {
+      setText("status", "DADOS TSE · CONSULTA " + new Date().toLocaleTimeString("pt-BR") +
+        (generatedAt ? " · ARQUIVO " + generatedAt : ""));
+    }
+
+    console.info("TSE: atualização concluída", {
+      generatedAt,
+      lulaVotes: lula.vap,
+      lulaPercent: lula.pvap,
+      flavioVotes: flavio.vap,
+      flavioPercent: flavio.pvap,
+      sectionsTotal: sections.ts,
+      sectionsCounted: sections.st,
+      sectionsPercent: sections.pst
+    });
+  } catch (error) {
+    // Não deixa valores antigos parecendo atuais quando a consulta falha.
+    clearResults("ERRO NA CONSULTA · VERIFIQUE CONEXÃO/CORS");
+    console.error("Erro ao consultar dados do TSE:", error);
   }
 }
-if(DEMO){updateDemo();setInterval(changeDemo,3000)}
-else{updateResults();setInterval(updateResults,30000)}
+
+if (DEMO) {
+  updateDemo();
+  setInterval(changeDemo, 3000);
+} else {
+  updateResults();
+  setInterval(updateResults, UPDATE_INTERVAL_MS);
+}
 </script>
 </body>
 </html>
