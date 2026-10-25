@@ -1,135 +1,108 @@
-
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Apuração Presidencial • TSE</title>
+<style>
+:root{--red:#ff424d;--blue:#3988ff;--white:#f5f6ff;--muted:#c2c9e8}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;width:100%;height:auto;min-height:0;background:transparent;overflow:hidden;font-family:Arial,Helvetica,sans-serif;color:var(--white)}
+body{display:block}
+.panel{width:100%;height:auto;padding:7px 9px 6px;background:rgba(7,12,34,.86);border:2px solid #667cff;border-radius:11px;box-shadow:0 0 0 2px rgba(30,60,255,.3),inset 0 0 16px rgba(72,50,255,.2),0 0 12px rgba(80,65,255,.5);position:relative;overflow:hidden}
+.panel:before{content:"";position:absolute;inset:3px;border:1px solid rgba(99,111,255,.45);border-radius:7px;pointer-events:none}
+.heading{display:flex;align-items:center;justify-content:center;gap:8px;font-weight:900;font-size:clamp(11px,2.2vw,21px);letter-spacing:.4px;text-align:center;text-shadow:0 0 7px #6377ff;white-space:nowrap}
+.line{height:4px;width:8%;border-radius:5px;flex-shrink:0}
+.red{background:var(--red);box-shadow:0 0 7px var(--red)}.blue{background:var(--blue);box-shadow:0 0 7px var(--blue)}
+.candidates{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:7px}
+.candidate{min-width:0;background:rgba(5,11,30,.76);border:1px solid #6978b6;border-radius:7px;padding:5px 7px 4px;text-align:center;position:relative}
+.candidate.lula{border-left:5px solid var(--red)}.candidate.flavio{border-left:5px solid var(--blue)}
+.name{font-weight:900;font-size:clamp(10px,1.6vw,16px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.percent{font-weight:1000;font-size:clamp(19px,3.4vw,34px);line-height:1.02;margin-top:1px;text-shadow:0 0 7px rgba(255,255,255,.16)}
+.votes{color:var(--muted);font-size:clamp(9px,1.25vw,13px);font-weight:700}
+.progress-label{display:flex;justify-content:space-between;gap:8px;margin:6px 2px 3px;font-weight:800;font-size:clamp(9px,1.3vw,13px);color:var(--muted)}
+.track{height:6px;background:#252e50;border:1px solid #6573b1;border-radius:9px;overflow:hidden}
+.fill{height:100%;width:0%;background:linear-gradient(90deg,#ff424d,#ffb34d,#3988ff);transition:width .6s ease}
+.footer{text-align:center;margin-top:4px;color:#d2d8f5;font-size:clamp(8px,1.05vw,11px);font-weight:700;line-height:1.15}
+.status{color:#ffe47a;font-weight:900}
+</style>
+</head>
+<body>
+<main class="panel" aria-label="Painel de apuração presidencial">
+  <div class="heading"><span class="line red"></span><span>APURAÇÃO PRESIDENCIAL · TSE</span><span class="line blue"></span></div>
+  <section class="candidates">
+    <article class="candidate lula"><div class="name" id="name13">LULA · 13</div><div class="percent" id="pct13">—%</div><div class="votes" id="votes13">— votos</div></article>
+    <article class="candidate flavio"><div class="name" id="name22">FLÁVIO · 22</div><div class="percent" id="pct22">—%</div><div class="votes" id="votes22">— votos</div></article>
+  </section>
+  <div class="progress-label"><span>URNAS APURADAS</span><span id="urnas">Aguardando dados…</span></div>
+  <div class="track"><div class="fill" id="fill"></div></div>
+  <div class="footer"><span id="status" class="status">CONECTANDO À FONTE OFICIAL</span> · Fonte: TSE · atualização automática</div>
+</main>
 <script>
-const DATA_URL = "https://resultados.tse.jus.br/oficial/ele2026/6258/dados/br/br-c0001-e006258-u.json";
-
-const DEMO = new URLSearchParams(location.search).get("demo") === "1";
-
-const fmtInt = n => Number(n || 0).toLocaleString("pt-BR");
-
-function setText(id, value) {
-  document.getElementById(id).textContent = value;
+const DATA_URL="https://resultados.tse.jus.br/oficial/ele2026/6258/dados/br/br-c0001-e006258-u.json";
+const DEMO=new URLSearchParams(location.search).get("demo")==="1";
+const fmtInt=n=>Number(n||0).toLocaleString("pt-BR");
+function setText(id,value){document.getElementById(id).textContent=value}
+function parsePct(value){
+  if(value===undefined||value===null||value==="")return 0;
+  const s=String(value).trim();
+  return Number(s.includes(",")?s.replace(",","."):s)||0;
 }
-
-function parsePct(value) {
-  if (value === undefined || value === null || value === "") return 0;
-  const s = String(value).trim();
-  return Number(s.includes(",") ? s.replace(",", ".") : s) || 0;
+function renderCandidate(number,name,pct,votes){
+  setText("name"+number,name+" · "+number);
+  setText("pct"+number,pct.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})+"%");
+  setText("votes"+number,fmtInt(votes)+" votos");
 }
-
-function renderCandidate(id, name, number, pct, votes) {
-  setText("name" + number, name + " · " + number);
-  setText("pct" + number, pct.toLocaleString("pt-BR", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  }) + "%");
-  setText("votes" + number, fmtInt(votes) + " votos");
+function renderUrnas(percent){
+  percent=Math.max(0,Math.min(100,percent));
+  setText("urnas",percent.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})+"%");
+  document.getElementById("fill").style.width=percent+"%";
 }
-
-function renderUrnas(percent) {
-  percent = Math.max(0, Math.min(100, percent));
-  setText("urnas", percent.toLocaleString("pt-BR", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  }) + "%");
-  document.getElementById("fill").style.width = percent + "%";
-}
-
-// MODO DE TESTE: usa somente números fictícios
-let demoVotes13 = 1250;
-let demoVotes22 = 1480;
-let demoUrnas = 12;
-
-function updateDemo() {
-  const total = demoVotes13 + demoVotes22;
-  const pct13 = demoVotes13 / total * 100;
-  const pct22 = demoVotes22 / total * 100;
-
-  renderCandidate("13", "LULA", "13", pct13, demoVotes13);
-  renderCandidate("22", "FLÁVIO BOLSONARO", "22", pct22, demoVotes22);
+let demoVotes13=1250,demoVotes22=1480,demoUrnas=12;
+function updateDemo(){
+  const total=demoVotes13+demoVotes22;
+  renderCandidate("13","LULA",demoVotes13/total*100,demoVotes13);
+  renderCandidate("22","FLÁVIO BOLSONARO",demoVotes22/total*100,demoVotes22);
   renderUrnas(demoUrnas);
-
-  setText("status", "MODO DE TESTE · DADOS FICTÍCIOS");
+  setText("status","MODO DE TESTE · DADOS FICTÍCIOS");
 }
-
-function changeDemo() {
-  demoVotes13 += Math.floor(Math.random() * 90) + 10;
-  demoVotes22 += Math.floor(Math.random() * 90) + 10;
-  demoUrnas = Math.min(100, demoUrnas + Math.random() * 4 + 1);
+function changeDemo(){
+  demoVotes13+=Math.floor(Math.random()*90)+10;
+  demoVotes22+=Math.floor(Math.random()*90)+10;
+  demoUrnas=Math.min(100,demoUrnas+Math.random()*4+1);
   updateDemo();
 }
-
-async function updateResults() {
-  try {
-    const response = await fetch(DATA_URL + "?_=" + Date.now(), {
-      cache: "no-store"
-    });
-
-    if (!response.ok) throw new Error("HTTP " + response.status);
-
-    const data = await response.json();
-    const cargo = (data.carg || []).find(c => String(c.cd) === "1")
-      || (data.carg || [])[0];
-
-    const candidates = [];
-
-    for (const group of (cargo?.agr || [])) {
-      for (const party of (group.par || [])) {
-        for (const cand of (party.cand || [])) {
-          candidates.push(cand);
-        }
-      }
-    }
-
-    const lula = candidates.find(c =>
-      String(c.n) === "13" || /LULA/i.test(c.nmu || c.nm || "")
-    );
-
-    const flavio = candidates.find(c =>
-      String(c.n) === "22" || /FLAVIO/i.test(c.nmu || c.nm || "")
-    );
-
-    if (!lula || !flavio) {
-      throw new Error("Candidatos não encontrados no JSON");
-    }
-
-    const lp = parsePct(lula.pvap);
-    const fp = parsePct(flavio.pvap);
-
-    renderCandidate("13", lula.nmu || "LULA", "13", lp, lula.vap);
-    renderCandidate("22", flavio.nmu || "FLÁVIO", "22", fp, flavio.vap);
-
-    const sections = data.s || {};
-    const counted = Number(sections.st || 0);
-    const total = Number(sections.ts || 0);
-    const percent = total > 0
-      ? counted / total * 100
-      : parsePct(sections.pst);
-
+async function updateResults(){
+  try{
+    const response=await fetch(DATA_URL+"?_="+Date.now(),{cache:"no-store"});
+    if(!response.ok)throw new Error("HTTP "+response.status);
+    const data=await response.json();
+    const cargo=(data.carg||[]).find(c=>String(c.cd)==="1")||(data.carg||[])[0];
+    const candidates=[];
+    for(const group of(cargo?.agr||[]))for(const party of(group.par||[]))for(const cand of(party.cand||[]))candidates.push(cand);
+    const lula=candidates.find(c=>String(c.n)==="13"||/LULA/i.test(c.nmu||c.nm||""));
+    const flavio=candidates.find(c=>String(c.n)==="22"||/FLAVIO/i.test(c.nmu||c.nm||""));
+    if(!lula||!flavio)throw new Error("Candidatos não encontrados no JSON");
+    const lp=parsePct(lula.pvap),fp=parsePct(flavio.pvap);
+    renderCandidate("13",lula.nmu||"LULA",lp,lula.vap);
+    renderCandidate("22",flavio.nmu||"FLÁVIO",fp,flavio.vap);
+    const sections=data.s||{},counted=Number(sections.st||0),total=Number(sections.ts||0);
+    const percent=total>0?counted/total*100:parsePct(sections.pst);
     renderUrnas(percent);
-
-    setText("status",
-      (lp === 0 && fp === 0 && percent === 0)
-        ? "AGUARDANDO TOTALIZAÇÃO"
-        : "DADOS RECEBIDOS · " + new Date().toLocaleTimeString("pt-BR")
-    );
-
-  } catch (error) {
-    setText("status", "ERRO NA CONSULTA · " + error.message);
-    setText("urnas", "indisponível");
-    setText("pct13", "—%");
-    setText("pct22", "—%");
-    setText("votes13", "— votos");
-    setText("votes22", "— votos");
-    document.getElementById("fill").style.width = "0%";
-    console.error("Erro ao consultar dados do TSE:", error);
+    setText("status",(lp===0&&fp===0&&percent===0)?"AGUARDANDO TOTALIZAÇÃO":"DADOS RECEBIDOS · "+new Date().toLocaleTimeString("pt-BR"));
+  }catch(error){
+    setText("status","DADOS INDISPONÍVEIS");
+    setText("urnas","indisponível");
+    setText("pct13","—%");
+    setText("pct22","—%");
+    setText("votes13","— votos");
+    setText("votes22","— votos");
+    document.getElementById("fill").style.width="0%";
+    console.error("Erro ao consultar dados do TSE:",error);
   }
 }
-
-if (DEMO) {
-  updateDemo();
-  setInterval(changeDemo, 3000);
-} else {
-  updateResults();
-  setInterval(updateResults, 30000);
-}
+if(DEMO){updateDemo();setInterval(changeDemo,3000)}
+else{updateResults();setInterval(updateResults,30000)}
 </script>
+</body>
+</html>
