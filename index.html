@@ -41,12 +41,20 @@ body{display:block}
 <script>
 /*
  * Placar TSE — integração baseada no JSON oficial.
- * A consulta real usa o arquivo nacional da eleição presidencial de 2º turno.
+ * A consulta real usa o arquivo nacional da eleição presidencial de 2º turno
+ * (eleição 6258, pleito 3221, 25/10/2026): .../dados/br/br-c0001-e006258-u.json
  * ?demo=1 ativa números fictícios SOMENTE para testar o visual.
  */
 const DATA_URL = "https://resultados.tse.jus.br/oficial/ele2026/6258/dados/br/br-c0001-e006258-u.json";
 const DEMO = new URLSearchParams(location.search).get("demo") === "1";
-const UPDATE_INTERVAL_MS = 60000; // intervalo conservador entre consultas
+
+// O TSE não publica uma cadência fixa (o arquivo muda quando há nova totalização) e permite até
+// 100 requisições/s por IP, então 20 s é leve e já acompanha a apuração de perto.
+const UPDATE_INTERVAL_MS = 20000;
+const REQUEST_TIMEOUT_MS = 15000;        // não deixa uma consulta travada impedir as próximas
+const KEEP_STALE_MS = 5 * 60 * 1000;     // se a consulta falhar, mantém os últimos números por até 5 min (com aviso)
+const MISSING_WAIT_MS = 60000;           // arquivo ainda não publicado (404): espera mais entre tentativas
+const BLOCK_WAIT_MS = 11 * 60 * 1000;    // o TSE bloqueia o IP por 10 min se houver excesso de requisições/404
 
 const fmtInt = value => Number(value || 0).toLocaleString("pt-BR");
 
@@ -61,6 +69,12 @@ function parseTseNumber(value) {
   const normalized = String(value).trim().replace(",", ".");
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function parseVotes(value) {
+  // Votos vêm como texto só com dígitos; tira qualquer separador por segurança.
+  const digits = String(value ?? "").replace(/\D/g, "");
+  return digits ? Number(digits) : 0;
 }
 
 function renderCandidate(number, name, percent, votes) {
@@ -111,88 +125,163 @@ function changeDemo() {
   updateDemo();
 }
 
-async function updateResults() {
-  try {
-    const response = await fetch(DATA_URL, {
-      cache: "no-store",
-      headers: { "Accept": "application/json" }
-    });
-
-    if (!response.ok) {
-      throw new Error("O servidor do TSE respondeu HTTP " + response.status);
-    }
-
-    const data = await response.json();
-
-    if (!Array.isArray(data.carg)) {
-      throw new Error("JSON recebido, mas não contém a lista 'carg' esperada");
-    }
-
-    const presidentCargo = data.carg.find(cargo => String(cargo.cd) === "1");
-    if (!presidentCargo) {
-      throw new Error("Cargo Presidente (cd=1) não encontrado");
-    }
-
-    const candidates = [];
-    for (const group of (presidentCargo.agr || [])) {
-      for (const party of (group.par || [])) {
-        for (const candidate of (party.cand || [])) {
-          candidates.push(candidate);
-        }
-      }
-    }
-
-    // O campo n no JSON oficial contém o número do candidato na urna.
-    const lula = candidates.find(candidate => String(candidate.n) === "13");
-    const flavio = candidates.find(candidate => String(candidate.n) === "22");
-
-    if (!lula || !flavio) {
-      throw new Error("Não encontrei os candidatos de número 13 e 22 no arquivo oficial");
-    }
-
-    const lulaPercent = parseTseNumber(lula.pvap);
-    const flavioPercent = parseTseNumber(flavio.pvap);
-
-    renderCandidate("13", lula.nmu || lula.nm || "LULA", lulaPercent, lula.vap);
-    renderCandidate("22", flavio.nmu || flavio.nm || "FLÁVIO", flavioPercent, flavio.vap);
-
-    // O TSE já fornece pst: percentual de seções totalizadas.
-    // Usar esse campo evita calcular percentual com campos interpretados incorretamente.
-    const sections = data.s || {};
-    const percentApurado = parseTseNumber(sections.pst);
-    renderUrnas(percentApurado);
-
-    const generatedAt = [data.dg, data.hg].filter(Boolean).join(" ");
-    if (lulaPercent === 0 && flavioPercent === 0 && percentApurado === 0) {
-      setText("status", "AGUARDANDO TOTALIZAÇÃO" + (generatedAt ? " · ARQUIVO " + generatedAt : ""));
-    } else {
-      setText("status", "DADOS TSE · CONSULTA " + new Date().toLocaleTimeString("pt-BR") +
-        (generatedAt ? " · ARQUIVO " + generatedAt : ""));
-    }
-
-    console.info("TSE: atualização concluída", {
-      generatedAt,
-      lulaVotes: lula.vap,
-      lulaPercent: lula.pvap,
-      flavioVotes: flavio.vap,
-      flavioPercent: flavio.pvap,
-      sectionsTotal: sections.ts,
-      sectionsCounted: sections.st,
-      sectionsPercent: sections.pst
-    });
-  } catch (error) {
-    // Não deixa valores antigos parecendo atuais quando a consulta falha.
-    clearResults("ERRO NA CONSULTA · VERIFIQUE CONEXÃO/CORS");
-    console.error("Erro ao consultar dados do TSE:", error);
+/* ---------- Consulta ao TSE ---------- */
+class HttpError extends Error {
+  constructor(status) {
+    super("O servidor do TSE respondeu HTTP " + status);
+    this.status = status;
   }
+}
+
+// Desce por carg → agr → par → cand (estrutura do arquivo -u.json). Se o TSE mudar o aninhamento,
+// cai numa busca recursiva por objetos que tenham número (n) e votos (vap).
+function collectCandidates(cargo) {
+  const found = [];
+  for (const group of (cargo.agr || [])) {
+    for (const party of (group.par || [])) {
+      for (const candidate of (party.cand || [])) found.push(candidate);
+    }
+  }
+  if (found.length) return found;
+  (function walk(node, depth) {
+    if (!node || typeof node !== "object" || depth > 6) return;
+    if (!Array.isArray(node) && node.n !== undefined && node.vap !== undefined) { found.push(node); return; }
+    for (const value of (Array.isArray(node) ? node : Object.values(node))) walk(value, depth + 1);
+  })(cargo, 0);
+  return found;
+}
+
+let lastGood = null;      // { at: ms, time: "hh:mm:ss" } da última consulta que deu certo
+let missingCount = 0;     // quantas vezes seguidas o arquivo deu 404
+
+async function updateResults() {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let response;
+  try {
+    // O parâmetro nocache evita que um cache intermediário (CDN) devolva um JSON velho.
+    response = await fetch(DATA_URL + "?nocache=" + Date.now(), {
+      cache: "no-store",
+      headers: { "Accept": "application/json" },
+      signal: controller.signal
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (!response.ok) throw new HttpError(response.status);
+
+  const data = await response.json();
+
+  if (!Array.isArray(data.carg)) {
+    throw new Error("JSON recebido, mas não contém a lista 'carg' esperada");
+  }
+
+  // O código do cargo pode vir como "1" ou "0001"; compara como número.
+  const presidentCargo = data.carg.find(cargo => Number(cargo.cd) === 1) ||
+    (data.carg.length === 1 ? data.carg[0] : null);
+  if (!presidentCargo) {
+    throw new Error("Cargo Presidente (cd=1) não encontrado");
+  }
+
+  const candidates = collectCandidates(presidentCargo);
+
+  // O campo n no JSON oficial contém o número do candidato na urna.
+  const lula = candidates.find(candidate => String(candidate.n).trim() === "13");
+  const flavio = candidates.find(candidate => String(candidate.n).trim() === "22");
+
+  if (!lula || !flavio) {
+    throw new Error("Não encontrei os candidatos de número 13 e 22 no arquivo oficial");
+  }
+
+  const lulaVotes = parseVotes(lula.vap);
+  const flavioVotes = parseVotes(flavio.vap);
+
+  // pvap = percentual do candidato sobre os votos válidos. Se faltar, no 2º turno os votos
+  // válidos são só os dos dois candidatos, então dá para calcular.
+  const totalTwo = lulaVotes + flavioVotes;
+  const lulaPercent = (lula.pvap !== undefined && lula.pvap !== "") ? parseTseNumber(lula.pvap)
+    : (totalTwo ? lulaVotes / totalTwo * 100 : 0);
+  const flavioPercent = (flavio.pvap !== undefined && flavio.pvap !== "") ? parseTseNumber(flavio.pvap)
+    : (totalTwo ? flavioVotes / totalTwo * 100 : 0);
+
+  renderCandidate("13", lula.nmu || lula.nm || "LULA", lulaPercent, lulaVotes);
+  renderCandidate("22", flavio.nmu || flavio.nm || "FLÁVIO", flavioPercent, flavioVotes);
+
+  // O TSE já fornece pst: percentual de seções totalizadas.
+  // Usar esse campo evita calcular percentual com campos interpretados incorretamente.
+  const sections = data.s || {};
+  const percentApurado = parseTseNumber(sections.pst);
+  renderUrnas(percentApurado);
+
+  const generatedAt = [data.dg, data.hg].filter(Boolean).join(" ");
+  const notStarted = parseVotes(sections.st) === 0 && totalTwo === 0 && percentApurado === 0;
+  if (notStarted) {
+    setText("status", "AGUARDANDO TOTALIZAÇÃO" + (generatedAt ? " · ARQUIVO " + generatedAt : ""));
+  } else {
+    setText("status", "DADOS TSE · CONSULTA " + new Date().toLocaleTimeString("pt-BR") +
+      (generatedAt ? " · ARQUIVO " + generatedAt : ""));
+  }
+
+  lastGood = { at: Date.now(), time: new Date().toLocaleTimeString("pt-BR") };
+  missingCount = 0;
+
+  console.info("TSE: atualização concluída", {
+    generatedAt,
+    lulaVotes: lula.vap,
+    lulaPercent: lula.pvap,
+    flavioVotes: flavio.vap,
+    flavioPercent: flavio.pvap,
+    sectionsTotal: sections.ts,
+    sectionsCounted: sections.st,
+    sectionsPercent: sections.pst
+  });
+  return UPDATE_INTERVAL_MS;
+}
+
+// Falhou: não deixa número velho parecendo atual. Mantém os últimos valores por até KEEP_STALE_MS,
+// sempre dizendo na linha de status que são antigos; passado esse tempo, apaga.
+function showFailure(message) {
+  if (lastGood && Date.now() - lastGood.at < KEEP_STALE_MS) {
+    setText("status", message + " · DADOS DE " + lastGood.time);
+  } else {
+    lastGood = null;
+    clearResults(message);
+  }
+}
+
+function handleFailure(error) {
+  console.error("Erro ao consultar dados do TSE:", error);
+  if (error && error.status === 404) {
+    // Antes da publicação o TSE responde 404; vários 404 seguidos podem bloquear o IP, então espera mais.
+    missingCount++;
+    showFailure("AGUARDANDO PUBLICAÇÃO DO TSE");
+    return missingCount >= 5 ? MISSING_WAIT_MS * 2 : MISSING_WAIT_MS;
+  }
+  if (error && (error.status === 403 || error.status === 429)) {
+    showFailure("TSE LIMITOU O ACESSO · NOVA TENTATIVA EM 11 MIN");
+    return BLOCK_WAIT_MS;
+  }
+  showFailure("ERRO NA CONSULTA · VERIFIQUE CONEXÃO/CORS");
+  return UPDATE_INTERVAL_MS;
+}
+
+// Uma consulta por vez: a próxima só é marcada quando a anterior termina.
+async function pollLoop() {
+  let wait = UPDATE_INTERVAL_MS;
+  try {
+    wait = await updateResults();
+  } catch (error) {
+    wait = handleFailure(error);
+  }
+  setTimeout(pollLoop, wait);
 }
 
 if (DEMO) {
   updateDemo();
   setInterval(changeDemo, 3000);
 } else {
-  updateResults();
-  setInterval(updateResults, UPDATE_INTERVAL_MS);
+  pollLoop();
 }
 </script>
 </body>
